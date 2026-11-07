@@ -1,0 +1,49 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  test:
+    name: Test (Python ${{ matrix.python }})
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        python: ["3.9", "3.11", "3.13"]
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: ${{ matrix.python }}
+
+      - name: Install
+        run: python -m pip install --upgrade pip && python -m pip install -e .
+
+      - name: Unit and integration tests
+        run: python -m unittest discover -s tests -v
+
+      - name: CLI runs against a live site
+        run: |
+          # exit 1 and 0 are both valid outcomes; a crash is not.
+          set +e
+          deploy-preflight https://www.python.org --json > report.json
+          code=$?
+          set -e
+          test "$code" -eq 0 -o "$code" -eq 1
+          python -c "import json;json.load(open('report.json'))"
+
+      - name: Upload report
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: report-py${{ matrix.python }}
+          path: report.json
+          if-no-files-found: ignore
